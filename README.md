@@ -60,17 +60,27 @@ This repository contains a simple Flask-based backend and HTML/JS frontend that 
 ### Deploying to Railway
 
 1. **Push your repository** (ensure it’s on GitHub or GitLab). Railway connects to your Git provider.
-2. **Create a new Railway project** and link the repo.
-3. **Specify environment variables** in Railway settings:
-   - ``UPLOAD_SECRET`` – set to a secure random string.
+2. **Create a new Railway project** and link the repo; it will automatically read `runtime.txt`,
+   `requirements.txt`, and the `Procfile` to build your Python service.
+3. **Set environment variables** under the project’s Variables tab:
+   - `UPLOAD_SECRET` – a strong key used to authenticate uploads.
+   - (optional) `FLASK_ENV` – `production` by default; use `development` for local debugging.
 
-4. **Railway will detect a Python project** automatically using ``requirements.txt`` and ``Procfile``.
+4. **Deploy and watch the logs**. Railway provides a dynamic port in the `PORT` variable,
+   which the app already respects.
 
-5. **Once deployed**, visit the provided URL (for example: ``https://thieft-detection.up.railway.app``).
-   - The front-end is served at ``/``
-   - The upload endpoint is ``/upload``
+5. **Access the service** via the provided URL (e.g. `https://thieft-detection.up.railway.app`):
+   - Front‑end UI at `/`
+   - Upload endpoint at `/upload` (accepts JPEGs with the secret header)
+   - Health check at `/health` (returns `{"status":"ok"}`)
 
-6. **Update the front-end** (if needed) by editing the server field to the deployed URL or leave blank to default to origin.
+6. **Public hosting considerations:**
+   - CORS is enabled so clients on other origins can POST to `/upload`.
+   - Responses are gzip‑compressed to save bandwidth.
+   - Uploaded files live in an ephemeral `uploads/` folder; they vanish when the
+     container restarts. For persistence, plug in external storage (S3, etc.).
+   - The front-end defaults to the same-origin server URL; you rarely need to
+     update it in production.
 
 ### Using the Simulator Script
 
