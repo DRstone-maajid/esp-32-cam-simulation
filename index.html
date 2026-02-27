@@ -37,7 +37,7 @@ body {
     <h2 class="font-bold">⚙ Settings</h2>
 
     <input id="server"
-        value="https://thief-finder.up.railway.app"
+        value="https://thieft-detection.up.railway.app"
         class="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-sm">
 
     <input id="key"
@@ -110,6 +110,11 @@ const sent = document.getElementById('sent');
 const status = document.getElementById('status');
 const dot = document.getElementById('dot');
 const nosig = document.getElementById('nosig');
+
+// default to same origin when hosting front-end on Railway
+if (!server.value) {
+    server.value = window.location.origin;
+}
 
 let cam = null, running = false, count = 0;
 
