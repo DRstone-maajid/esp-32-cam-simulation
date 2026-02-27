@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ESP32-CAM Simulator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+body {
+    background: linear-gradient(to bottom right,#0f172a,#1e1b4b,#0f172a);
+    color: white;
+}
+.glass {
+    background: rgba(255,255,255,.06);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,.12);
+}
+</style>
+</head>
+
+<body class="p-6">
+<div class="max-w-6xl mx-auto space-y-6">
+
+<!-- HEADER -->
+<div class="flex justify-between items-center">
+    <h1 class="text-3xl font-bold">📷 ESP32-CAM Simulator</h1>
+    <div class="flex items-center gap-2 glass px-4 py-2 rounded-full">
+        <div id="dot" class="w-3 h-3 bg-gray-400 rounded-full"></div>
+        <span id="status" class="text-xs">IDLE</span>
+    </div>
+</div>
+
+<!-- CONFIG -->
+<div class="grid md:grid-cols-3 gap-6">
+<div class="glass p-5 rounded-xl space-y-4">
+    <h2 class="font-bold">⚙ Settings</h2>
+
+    <input id="server"
+        value="https://thief-finder.up.railway.app"
+        class="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-sm">
+
+    <input id="key"
+        placeholder="UPLOAD_SECRET"
+        class="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-sm">
+
+    <select id="mode" class="w-full bg-black/40 border border-white/10 rounded px-3 py-2">
+        <option value="webcam">Webcam</option>
+        <option value="manual">Manual Upload</option>
+    </select>
+
+    <div id="auto">
+        <label class="text-xs">Interval <span id="ival">3</span>s</label>
+        <input id="interval" type="range" min="3" max="10" value="3"
+            class="w-full accent-purple-500">
+        <button id="start"
+            class="w-full mt-3 bg-purple-600 py-2 rounded font-bold">
+            Start Stream
+        </button>
+    </div>
+
+    <div id="manual" class="hidden space-y-3">
+        <input id="file" type="file" accept="image/*" class="hidden">
+        <label for="file"
+            class="block border-2 border-dashed border-white/20 rounded p-4 text-center cursor-pointer">
+            Select Image
+        </label>
+        <button id="send"
+            class="w-full bg-emerald-600 py-2 rounded font-bold disabled:opacity-40"
+            disabled>
+            Send Image
+        </button>
+    </div>
+</div>
+
+<!-- PREVIEW -->
+<div class="glass p-4 rounded-xl md:col-span-2">
+    <h2 class="font-bold mb-2">📡 Preview</h2>
+    <div class="bg-black aspect-video rounded flex items-center justify-center">
+        <video id="video" autoplay muted playsinline class="hidden w-full h-full object-cover"></video>
+        <img id="img" class="hidden w-full h-full object-contain">
+        <span id="nosig" class="text-gray-500">No Signal</span>
+    </div>
+    <div class="mt-2 text-xs">
+        Sent: <span id="sent">0</span>
+    </div>
+</div>
+</div>
+
+<!-- LOG -->
+<div id="log" class="glass p-4 rounded-xl h-40 overflow-y-auto font-mono text-xs"></div>
+
+<canvas id="canvas" class="hidden"></canvas>
+</div>
+
+<script>
+const server = serverUrl = document.getElementById('server');
+const key = document.getElementById('key');
+const mode = document.getElementById('mode');
+const interval = document.getElementById('interval');
+const ival = document.getElementById('ival');
+const start = document.getElementById('start');
+const sendBtn = document.getElementById('send');
+const file = document.getElementById('file');
+const video = document.getElementById('video');
+const img = document.getElementById('img');
+const canvas = document.getElementById('canvas');
+const logBox = document.getElementById('log');
+const sent = document.getElementById('sent');
+const status = document.getElementById('status');
+const dot = document.getElementById('dot');
+const nosig = document.getElementById('nosig');
+
+let cam = null, running = false, count = 0;
+
+interval.oninput = e => ival.textContent = e.target.value;
+
+mode.onchange = () => {
+    stop();
+    auto.classList.toggle('hidden', mode.value !== 'webcam');
+    manual.classList.toggle('hidden', mode.value !== 'manual');
+};
+
+file.onchange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = ev => {
+        img.src = ev.target.result;
+        img.classList.remove('hidden');
+        video.classList.add('hidden');
+        nosig.classList.add('hidden');
+        sendBtn.disabled = false;
+    };
+    r.readAsDataURL(f);
+};
+
+sendBtn.onclick = () => captureAndSend();
+
+start.onclick = () => running ? stop() : startCam();
+
+async function startCam() {
+    try {
+        cam = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }});
+        video.srcObject = cam;
+        await video.play();
+        video.classList.remove('hidden');
+        img.classList.add('hidden');
+        nosig.classList.add('hidden');
+        running = true;
+        setStatus("STREAMING", "bg-green-500");
+        loop();
+    } catch (e) {
+        log("Camera error", "error");
+    }
+}
+
+function stop() {
+    running = false;
+    if (cam) cam.getTracks().forEach(t => t.stop());
+    video.classList.add('hidden');
+    nosig.classList.remove('hidden');
+    setStatus("IDLE", "bg-gray-400");
+}
+
+async function loop() {
+    if (!running) return;
+    await captureAndSend();
+    setTimeout(loop, interval.value * 1000);
+}
+
+async function captureAndSend() {
+    const src = mode.value === "webcam" ? video : img;
+    if (!src.srcObject && !src.src) return;
+
+    canvas.width = 640;
+    canvas.height = 480;
+    canvas.getContext("2d").drawImage(src,0,0,640,480);
+
+    canvas.toBlob(async b => {
+        try {
+            const r = await fetch(server.value + "/upload", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "image/jpeg",
+                    "X-ESP32-KEY": key.value.trim()
+                },
+                body: b
+            });
+
+            if (!r.ok) throw r.status;
+            count++;
+            sent.textContent = count;
+            log("Upload OK", "success");
+        } catch (e) {
+            log("Upload failed: HTTP " + e, "error");
+        }
+    }, "image/jpeg", .9);
+}
+
+function log(t,c){
+    logBox.innerHTML += `<div class="${c==='error'?'text-red-400':'text-emerald-400'}">[${new Date().toLocaleTimeString()}] ${t}</div>`;
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+function setStatus(t,c){
+    status.textContent=t;
+    dot.className=`w-3 h-3 rounded-full ${c}`;
+}
+</script>
+</body>
+</html>
